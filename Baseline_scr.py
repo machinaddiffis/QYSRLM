@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
 
     all_data=[]
-    stat=tm.time()
+
     for time in range(Total_TTI):
         print("---------------------------------")
         UE_num = len(Env_base.active_UE)
@@ -127,8 +127,7 @@ if __name__ == "__main__":
         data.append(record)
         all_data.append(data)
         end=tm.time()
-        print(end-stat)
-        quit()
+
         with open(f"./{name}_Phi.pkl", "wb") as file:
             pickle.dump(all_data, file)
 
