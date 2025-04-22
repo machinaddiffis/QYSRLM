@@ -10,7 +10,7 @@ random.seed(0)
 
 class WirelessNetwork:
     def __init__(self, K=1, M=17, Tx=8, N=100, Rx=1, N_vip=10, dmin=10, dmax=1000,
-                 d_0=1, PL_0=0, alpha=2, SP_sigma=6, N_max=10, gamma=None,
+                 d_0=1, PL_0=0, alpha=2, SP_sigma=6, N_max=8, gamma=None,
                  mu_B_vip=100000, sigma_B_vip=150, mu_B=80000, sigma_B=100,SP_N=None):
         self.K = K
         self.M = M
@@ -77,11 +77,27 @@ class WirelessNetwork:
 
         self.all_beta = beta_N(self.SP_N, self.UE_point, self.PL_0, self.d_0, self.alpha,VIP_TUNE=self.Vip_index)
         self.active_UE = sample_vector(self.gamma, self.N)
-        if len(self.active_UE) - self.N_max > 0:
-            num = len(self.active_UE) - self.N_max
-            self.active_UE = remove_random_elements(self.active_UE, num)
+        intern=[item for item in self.active_UE if item not in self.edge_index]
+        intern = [item for item in intern if item not in self.Vip_index]
 
+        vip_option = random.choice(self.Vip_index)
+        edge_option = random.choice(self.edge_index)
+        if len(intern)+2 - self.N_max > 0:
+            num = len(intern)+2 - self.N_max
+            self.active_UE = remove_random_elements(intern, num)
+        self.active_UE.extend([vip_option])
+        self.active_UE.extend([edge_option])
         self.active_vip=common_elements(self.active_UE, self.Vip_index)
+
+
+        # if len(self.active_UE)+2 - self.N_max > 0:
+        #     num = len(self.active_UE)+2 - self.N_max
+        #     self.active_UE = remove_random_elements(self.active_UE, num)
+        #
+        # self.active_vip=common_elements(self.active_UE, self.Vip_index)
+
+
+
 
         self.VIP_times_record[self.active_UE]+=1
         if self.active_vip==None:
@@ -173,11 +189,13 @@ class WirelessNetwork:
     def init_P(self):
         self.last_X=np.zeros((len(self.active_UE),self.M))
         self.last_P=np.zeros((len(self.active_UE),self.M))
+        self.last_mcs=0
 
     def step(self,action):
         self.act_H = self.H[self.active_UE]
         self.act_V = self.V[self.active_UE]
         self.act_Phi = self.Phi[self.active_UE]
+        print("UE索引:",self.active_UE)
 
         # print(action)
         # action = random.randint(0, 169)
@@ -185,16 +203,17 @@ class WirelessNetwork:
         # UE_index = action - RBG_index * 10
         # print(action)
         UE_index, RBG_index=action # It's the Inner index.
-
+        print("X变化:",1,"位置：",(UE_index, RBG_index))
         self.last_X[UE_index, RBG_index] += 1
 
         mask = self.last_X[:, RBG_index] > 0
         mask = (1 - mask) * 1e18
 
-
+        Q=self.last_P.copy()
         self.last_P[:, RBG_index] = self.softmax(self.last_X[:, RBG_index] - mask)
-
-
+        dif=self.last_P-Q
+        Res = get_nonzero_elements_with_indices(dif)
+        print("P变化和位置:",Res,)
         #compute MCS and Sinr
 
         ##mask tiny
@@ -210,13 +229,13 @@ class WirelessNetwork:
         #
         #     self.last_P=self.last_P/col_sum
 
-
+        print("上次mcs:", self.last_mcs)
         SINR, MCS = compute_sinr_loop(self.last_P, self.act_H, self.act_V)
 
         ave_mcs, ave_count, ave_sinr = getBaselineMcsSinr(MCS, SINR)
-
+        print("当前mcs:",ave_mcs)
         ave_sinr[np.where(ave_sinr > 28)] = 28  # fix
-
+        self.last_mcs=ave_mcs
 
         rate = getSendRate(ave_mcs, ave_count)
         now_rate = np.minimum(self.B_N[self.active_UE], rate)
@@ -225,7 +244,9 @@ class WirelessNetwork:
         reward_Rate=np.sum(now_rate)-self.last_rate
         self.last_rate=np.sum(now_rate)
 
+        print("上一次:",self.last_satis)
         now_satis=np.dot(now_rate, self.vip_vector)
+        print("现在:", now_satis)
         reward_satis=(now_satis-self.last_satis)
         self.last_satis=now_satis
 
@@ -235,7 +256,10 @@ class WirelessNetwork:
 
         # REWARD=np.dot(self.N_w,[reward_Rate,reward_satis,reward_edge])
 
-        REWARD = reward_Rate
+        # REWARD = reward_Rate
+        REWARD=reward_Rate+reward_satis+reward_edge
+        # REWARD=reward_satis
+        REWARD=REWARD/10000
 
         if reward_Rate==0:
             self.state_state+=1
@@ -243,10 +267,8 @@ class WirelessNetwork:
             self.state_state =0
 
 
-
-
-        if REWARD==0:
-            REWARD = -1000
+        # if REWARD==0:
+        #     REWARD = -1000
 
         print("--------","TTI:",self.slot," |inner time:",self.inner_slot,"--------")
         print("Rate:",reward_Rate," |Satisfaction:",reward_satis," |Edge:",reward_edge," |all:",REWARD)
@@ -269,6 +291,7 @@ class WirelessNetwork:
             info = objs
         else:
             done = False
+
 
 
         return self.state,REWARD,done,info
@@ -324,6 +347,11 @@ class WirelessNetwork:
         return self.state
 
     def update(self,P=None,dec=None):
+        vip_finish=False
+        edge_finish=False
+        vip_choice=None
+        edge_choice=None
+
         print("待处理用户:",self.active_UE)
         self.act_H = self.H[self.active_UE]
         self.act_V = self.V[self.active_UE]
@@ -350,44 +378,66 @@ class WirelessNetwork:
 
         self.VIP_rate_record[self.active_UE] += real_rate
 
-        if self.active_vip != None:
-            # if len(self.active_vip)>2:
-            #     print("not None")
-            #     print(self.active_vip)
-            #     print(self.active_UE)
-            #     print(real_rate)
-            vip_add_info = [self.active_UE.index(item) if item in self.active_UE else -1 for item in self.active_vip]
-            # if len(self.active_vip) > 2:
-            #     print(vip_add_info)
-            #     print('---')
-            #     print(rate)
-            #     print(vip_add_info)
-            #     print(self.VIP_rate_record[vip_add_info], real_rate[vip_add_info])
-
-            # vip_add_info_id = [self.Vip_index.index(item) if item in self.Vip_index else -1 for item in self.active_vip]
-            # self.VIP_rate_record[vip_add_info_id] += real_rate[vip_add_info]
 
         #reomve finished UE
         in_indices = np.where(self.B_N[self.active_UE]==0)[0]
         out_indices=np.array(self.active_UE)[in_indices]
         print("完成用户：",out_indices)
+        if len(out_indices)!=0:
+            vip_check=common_elements(out_indices,self.Vip_index)
+
+            if vip_check is not None:
+                vip_finish=True
+
+            edge_check=common_elements(out_indices,self.edge_index)
+            if edge_check is not None:
+                edge_finish=True
+
+
         self.epf_param[out_indices]=0
 
         # print("finished:",out_indices)
         self.active_UE = remove_elements(self.active_UE, out_indices)
         # print("removed:",self.active_UE)
         print("一次发送剩余活跃用户：",self.active_UE)
+        if vip_finish:
+            vip_choice=random.choice(self.Vip_index)
+            self.active_UE.extend([vip_choice])
+        if edge_finish:
+            edge_choice=random.choice(self.edge_index)
+            self.active_UE.extend([edge_choice])
+
         rest_UE=remove_elements([i for i in range(self.N)], self.active_UE)
 
-        print("剩余用户：",len(rest_UE))
-        self.active_Delta = sample_vector(self.gamma, self.N,rest_list=rest_UE,time=self.slot)
-        print("计划新增用户：",self.active_Delta)
-        # print("new samples:", self.active_Delta,len(rest_UE))
-        if len(self.active_UE+self.active_Delta) - self.N_max > 0:
-            num = len(self.active_UE+self.active_Delta) - self.N_max
-            self.active_Delta = remove_random_elements(self.active_Delta, num)
-        print("新增用户:", self.active_Delta)
-        self.active_UE.extend(self.active_Delta)
+        print("增加特殊用户后，可选用户数：",len(rest_UE))
+        print(self.active_UE,111)
+        av_set=remove_elements([i for i in range(self.N)], self.active_UE)
+        av_set = remove_elements(av_set, self.Vip_index)
+        av_set = remove_elements(av_set, self.edge_index)
+
+        # self.active_Delta = sample_vector(self.gamma, self.N,rest_list=rest_UE,time=self.slot)
+
+        self.active_Delta = sample_vector(self.gamma, self.N, rest_list=rest_UE, time=self.slot)
+        vector = np.random.choice([0, 1], size=len(av_set), p=[1 - self.gamma, self.gamma])
+
+        mid_term=np.where(vector>0)[0]
+
+        av_set=np.array(av_set)
+        delta=av_set[mid_term].tolist()
+
+        print("计划新增用户：",delta)
+        if len(self.active_UE + delta) - self.N_max > 0:
+            num = len(self.active_UE + delta)- self.N_max
+            delta = remove_random_elements(delta, num)
+        print("新增用户:", delta)
+        self.active_UE.extend(delta)
+
+
+        # if len(self.active_UE+self.active_Delta)+(vip_finish+edge_finish) - self.N_max > 0:
+        #     num = len(self.active_UE+self.active_Delta) - self.N_max
+        #     self.active_Delta = remove_random_elements(self.active_Delta, num)
+        # print("新增用户:", self.active_Delta)
+        # self.active_UE.extend(self.active_Delta)
 
         self.active_vip = common_elements(self.active_UE,self.Vip_index)#update
         # print("final UE:", self.active_UE)

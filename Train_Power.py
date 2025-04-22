@@ -7,6 +7,7 @@ import torch.optim as optim
 from models import SimpleTransformerEncoder, Policy
 import torch.nn.functional as F
 import random
+from utlis import scalar_to_index
 import pickle
 import copy
 from utlis import sample_index
@@ -17,14 +18,14 @@ device = torch.device("cuda" if use_cuda else "cpu")
 # set net work
 
 task = f"train_rbg"
-name = f"RL_Test"
+name = f"RL_Test_new_version_single"
 RBGs = 17
 UEs = 100
-Total_TTI = 1500
-MU_B_VIP = 70000
-SIMGA_B_VIP = 1150
-MU_B = 25000
-SIMGA_B = 1100
+Total_TTI = 2500
+MU_B_VIP = 150000
+SIMGA_B_VIP = 1000
+MU_B = 80000
+SIMGA_B = 1000
 SP_sigma = 6
 alpha_1 = 0.8
 alpha_2 = 0.2
@@ -34,7 +35,7 @@ Env_rl = WirelessNetwork(N=UEs, M=RBGs, mu_B_vip=MU_B_VIP, sigma_B_vip=SIMGA_B_V
 # Env_rand=WirelessNetwork(N=UEs,M=RBGs,mu_B_vip=MU_B_VIP,sigma_B_vip=SIMGA_B_VIP,mu_B=MU_B,sigma_B=SIMGA_B,SP_N=SP_N)
 VIP_list = Env_rl.Vip_index  # Note:ensure they have same VIP UEs
 
-lr = 1e-2
+lr = 1e-3
 hidden_dim = 64
 nT = 8
 input_dim = 2 * nT + 1 + 3 + 1 + RBGs+1
@@ -51,20 +52,22 @@ optimizer = optim.Adam(policy.parameters(), lr=lr)
 eps = np.finfo(np.float32).eps.item()
 
 
-def select_action(state):
+def select_action(state,force=None):
     state = np.array(state)
 
     state = torch.from_numpy(state).float()
 
     probs = policy(state)
 
+
     X_flat=Env_rl.last_X.flatten()
-    none=np.where(X_flat>=3)[0]
+    none=np.where(X_flat>=100)[0]
 
 
 
     # 将tensor展平为一维
     if fixed_size != True:
+
         flat_tensor = probs.view(-1)
         # 对展平后的tensor计算softmax，得到概率分布
         probs = F.softmax(flat_tensor, dim=0)
@@ -74,11 +77,28 @@ def select_action(state):
     #     new_probs[none]=torch.tensor(0).float()
     #     sum_other = new_probs.sum()
     #     probs=new_probs/sum_other
+    if len(none)>0:
+        # print(none)
+        new_probs = probs.clone()
+        new_probs[none] = new_probs[none] - 1e18  # ✅ not in-place on the original
+        probs = F.softmax(new_probs)
+        # print(probs[none])
 
+    else:
+        probs = F.softmax(probs)
+    ##entorpy test
+    log=torch.log2(probs)
+    dis=probs.clone()
+    entropy=-(torch.sum(log*dis))
+
+    print("entropy变化：------------------------",entropy)
     m = Categorical(probs)
+
+
     # top1 = torch.argmax(probs)
 
     action = m.sample()
+    # print("ac,",action)
 
     policy.saved_log_probs.append(m.log_prob(action))
 
@@ -98,8 +118,6 @@ def finish_episode():
     returns = (returns - returns.mean()) / (returns.std() + eps)
     for log_prob, R in zip(policy.saved_log_probs, returns):
         policy_loss.append(-log_prob * R)
-
-
     policy_loss = sum(policy_loss)
 
     optimizer.zero_grad()
@@ -138,7 +156,7 @@ if __name__ == '__main__':
 
     all_data = []
     pre_data = []
-    timelog = 50
+    timelog =40
     Env_rl.timesteps = timelog
 
     delta_rl = []
@@ -164,15 +182,23 @@ if __name__ == '__main__':
         # get action
 
         active_UE_base = Env_rl.active_UE.copy()
-        action = select_action(state)
-        RBG_index = action // len(Env_rl.active_UE)
-        UE_index = action - RBG_index * len(Env_rl.active_UE)
+        X_record=Env_rl.last_X
+
+        action = select_action(state,force=X_record)
+        # RBG_index = action // len(Env_rl.active_UE)
+        # UE_index = action - RBG_index * len(Env_rl.active_UE)
+        i,j=scalar_to_index(action,N=len(Env_rl.active_UE),M=RBGs)
+        UE_index = i
+        RBG_index = j
+        # UE_index = (action // RBGs)
+        # RBG_index = action - (UE_index) * RBGs -1
         # step env
         state, reward, done, info = Env_rl.step((UE_index, RBG_index))
         if fixed_size:
             state = state.flatten().copy()
 
         policy.rewards.append(reward)
+
         # print(Env_rl.last_P)
         if done:
             finish_episode()
@@ -182,12 +208,16 @@ if __name__ == '__main__':
                 # print(t)
                 # quit()
             finnal_Power = Env_rl.last_P.copy()
+            finnal_Power = Env_rl.last_X.copy()
+            print("功率：",finnal_Power)
+
             actual_rate, data = Env_rl.update(finnal_Power)
             record = [Env_rl.VIP_times_record.copy(), Env_rl.VIP_rate_record.copy(), active_UE_base,
                       actual_rate.copy()]
 
             data.append(record)
             all_data.append(data)
+
             with open(f"./{name}.pkl", "wb") as file:
                 pickle.dump(all_data, file)
             pre_data.append(Env_rl.preference)

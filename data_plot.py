@@ -40,13 +40,14 @@ class CallData:
         with open(self.file_path, "rb") as file:
             self.all_data = pickle.load(file)
 
-        with open("preference_RL_Test.pkl", "rb") as file:
-            a = pickle.load(file)
-        for iter in a:
-            print(iter)
+        # with open("preference_RL_Test.pkl", "rb") as file:
+        #     a = pickle.load(file)
+        # for iter in a:
+        #     print(iter)
 
         # 打印数据长度
         print("数据长度:", len(self.all_data))
+
         self.actual_rate = np.zeros((len(self.all_data),self.N))
 
         self.rate_sum=np.zeros((self.N))
@@ -89,6 +90,7 @@ class CallData:
         for l in range(len(self.all_data)):
             this_mcs=self.ave_mcs[l]
             this_mcs=np.average(this_mcs[this_mcs!=-1])
+
             this_sinr=self.ave_sinr[l]
             this_sinr=np.average(this_sinr[this_sinr!=-1.00000000e+04])
             self.avg_mcs_list.append(this_mcs)
@@ -108,6 +110,7 @@ class CallData:
 
         self.cal_sinr = self.cumulative_mean(self.avg_sinr_list)
         self.part_cal_sinr=compute_B(self.avg_sinr_list)
+
         print("MCS平均：",self.cal_mcs[-1])
         print("SINR平均：", self.cal_sinr[-1])
 
@@ -125,20 +128,41 @@ class CallData:
         ##vip satisfaction
         self.satis=[]
         vip_index=[i for i in range(10)]
+        edge_index=[95,96,97,98,99]
         for k in range(len(self.all_data)):
+            # print("--------------------")
             times = self.times_record[k]
+            # print("相应时长",times)
             time_rate=self.rate_record[k]
+            # print("总累计发送量",time_rate)
             vip_rate=(time_rate/times)[vip_index]
+            edge_rate=(time_rate/times)[edge_index]
+
             index=self.indices_greater_than_k(vip_rate,self.vip_target)
             all_vip=np.count_nonzero(np.isfinite(vip_rate))
+            # print(vip_rate)
+            # print(index)
+            # print(all_vip)
             if all_vip==0:
                 pass
             else:
+
                 self.satis.append(len(index)/all_vip)
+                # print(len(index) / all_vip)
+
+        vip_mean = np.mean(vip_rate)
+        vip_variance = np.std(vip_rate)
+
+        edge_mean = np.mean(edge_rate)
+        edge_variance = np.std(edge_rate)
+
+        print(f"vip发送平均值：{vip_mean}，vip发送标准差:{vip_variance},edge发送平均值：{edge_mean}，edge发送标准差:{edge_variance}")
+
         self.avg_satis=self.cumulative_mean(self.satis).copy()
         self.part_avg_satis=compute_B(self.satis).copy()
 
         print("VIP用户总平均满意度：",self.avg_satis[-1])
+
         ##edge Rate
         self.edge_rate=[]
         for k in range(len(self.all_data)):
@@ -226,9 +250,10 @@ class CallData:
 
 # 示例用法
 if __name__ == "__main__":
-    VIP=47000
-    data_obj = CallData(f"Baseline_Test_47000_Phi.pkl",vip_target=VIP)
-    # data_obj = CallData(f"RL_Test.pkl", vip_target=VIP)
+    VIP=60000
+    # data_obj = CallData(f"Baseline_Test_{VIP}_right_Phi.pkl",vip_target=VIP)
+    # data_obj = CallData(f"RL_Test_new_version_single.pkl", vip_target=VIP)
+    data_obj = CallData(f"Baseline_Test_58000_ev_Phi.pkl", vip_target=VIP)
     data_obj.load_data()
     data_obj.calculat_samples()
     data_obj.plot_all()

@@ -101,4 +101,4 @@ class Policy(nn.Module):
         x5=self.affine5(x+x1)
         action_scores = self.affine4(x5)
 
-        return F.softmax(action_scores)
+        return action_scores

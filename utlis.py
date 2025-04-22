@@ -41,7 +41,7 @@ def random_points(dmin, dmax, N):
     return points
 
 def beta_N(SP_N,UE_point,PL_0,d_0,alpha,VIP_TUNE=None):
-    mu=1000
+    mu=0.001
     b_N=[]
     if VIP_TUNE is None:
         for n in range(len(SP_N)):
@@ -54,7 +54,7 @@ def beta_N(SP_N,UE_point,PL_0,d_0,alpha,VIP_TUNE=None):
         for n in range(len(SP_N)):
             x, y = UE_point[n]
             if n in VIP_TUNE:
-                dn = math.sqrt(x * x + y * y)*1.5*mu
+                dn = math.sqrt(x * x + y * y)*0.5*mu
             else:
                 dn = math.sqrt(x * x + y * y)*mu
             PL_n = PL_0 + SP_N[n] + 10 * alpha * math.log10((dn / d_0))
@@ -153,7 +153,6 @@ def compute_zf_precoder(H):
     返回:
         V: 零迫使预编码矩阵，形状为 (num_RBG, num_users, N_tx, 1)
     """
-    print(H.shape,"shape")
     N,M, Tx = H.shape
 
     # V = np.zeros((num_RBG, num_users, N_tx, 1), dtype=H.dtype)
@@ -190,8 +189,29 @@ def compute_zf_precoder(H):
         #     norm_factor = np.linalg.norm(V[i, :, j])
         #     if norm_factor > 0:
         #         V[i, :, j] /= norm_factor
+    V_norm=normalize_columns_l2(V)
+    return V_norm
 
-    return V
+def normalize_columns_l2(A):
+    """
+    Normalize columns of A[n, :, :] so that each column has L2 norm equal to 1
+    for each n in 0..N-1 and t in 0..T-1.
+
+    Parameters:
+    A (np.ndarray): Input array of shape (N, M, T)
+
+    Returns:
+    np.ndarray: Normalized array of the same shape
+    """
+    # Compute L2 norm along axis=1 (over M), keepdims for broadcasting
+    l2_norms = np.linalg.norm(A, axis=1, keepdims=True)  # shape: (N, 1, T)
+
+    # Avoid division by zero
+    l2_norms[l2_norms == 0] = 1e-8
+
+    A_normalized = A / l2_norms
+    return A_normalized
+
 
 def compute_SINR(X, H, V, noise_power=1e-6):
     """
@@ -554,3 +574,17 @@ def compute_B(A, k=300):
             avg = sum(window) / k
         B.append(avg)
     return B
+
+def get_nonzero_elements_with_indices(arr):
+    nonzero_indices = np.nonzero(arr)
+    result = []
+    for idx in zip(*nonzero_indices):
+        value = arr[idx]
+        result.append([value, idx])
+    return result
+
+def scalar_to_index(index, N, M):
+    if not (0 <= index < N * M):
+        raise ValueError("Index out of bounds for matrix size.")
+    row, col = divmod(index, M)
+    return row, col

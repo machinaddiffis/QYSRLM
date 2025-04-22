@@ -52,8 +52,9 @@ def M2M_baseline_abla(B=None,channel=None,active_UE=None,de=0,epf=None,beta=None
 
     ##EPF calculate
     Q = B[active_UE]
-    # upterm=(1/np.array(beta))[active_UE]
-    upterm = (np.array(beta))[active_UE]
+
+    # upterm = (np.array(beta))[active_UE]
+    upterm =1
     downterm=(1+epf.copy())[active_UE]
     EPF=upterm/downterm
     if GBR is not None:
@@ -100,6 +101,7 @@ def M2M_baseline_abla(B=None,channel=None,active_UE=None,de=0,epf=None,beta=None
             #计算当前RBG内的所有用户传输速率： input X[：,j],P[:,j]，H[User_ID,:,:], Phi[,:], output M-d vector
             SINR, MCS = compute_sinr_loop(X, H[active_UE], V[active_UE])
 
+
             ave_mcs, ave_count, ave_sinr = getBaselineMcsSinr(MCS, SINR)
 
 
@@ -130,6 +132,10 @@ def M2M_baseline_abla(B=None,channel=None,active_UE=None,de=0,epf=None,beta=None
 
     # 计算所有用户实际传输数据量：
     actual_rate = np.minimum(Q, rate)
+
     # actual_rate = np.minimum(Q, 100)
+    print(Q)
+    print(P)
+
 
     return P,ave_sinr,ave_mcs,actual_rate,ave_count,rate

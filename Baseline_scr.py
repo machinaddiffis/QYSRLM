@@ -39,15 +39,15 @@ def normalization_1(data):
     return (data) / _range
 
 
-VIP_TARGET=47000
-name=f"Baseline_Test_{VIP_TARGET}"
+VIP_TARGET=58000
+name=f"Baseline_Test_{VIP_TARGET}_ev"
 RBGs = 17
 UEs = 100
 Total_TTI = 1000
-MU_B_VIP=70000
-SIMGA_B_VIP=1150
-MU_B=25000
-SIMGA_B=1100
+MU_B_VIP=150000
+SIMGA_B_VIP=1000
+MU_B=80000
+SIMGA_B=1000
 SP_sigma=6
 alpha_1=0.8
 alpha_2=0.2
@@ -115,10 +115,11 @@ if __name__ == "__main__":
         P,ave_sinr,ave_mcs,_,ave_count,_ = M2M_baseline_abla(B=all_B_base, active_UE=active_UE_base,
                                                                                       channel=(H, V),
                                                                                       epf=Env_base.epf_param,beta=Env_base.all_beta,GBR=GBR_info)
-
+        print("功率",P)
         dec=[ave_mcs,ave_count]
         print("request:", Env_base.B_N[Env_base.Vip_index])
         actual_rate,data=Env_base.update(P,dec=dec)
+
 
         record=[Env_base.VIP_times_record.copy(),Env_base.VIP_rate_record.copy(),active_UE_base,actual_rate.copy()]
         # print(Env_base.VIP_times_record)
