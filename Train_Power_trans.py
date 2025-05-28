@@ -4,7 +4,7 @@ from Params import WirelessNetwork
 from collections import deque
 from torch.distributions import Categorical
 import torch.optim as optim
-from models import SimpleTransformerEncoder, Policy
+from models import SimpleTransformerEncoder, Policy,TransLayer
 import torch.nn.functional as F
 import random
 from utlis import scalar_to_index
@@ -18,7 +18,7 @@ device = torch.device("cuda" if use_cuda else "cpu")
 # set net work
 
 task = f"train_rbg"
-name = f"RL_Test_new_version_single"
+name = f"RL_Test_Transformer"
 RBGs = 17
 UEs = 100
 Total_TTI = 2500
@@ -31,7 +31,7 @@ alpha_1 = 0.8
 alpha_2 = 0.2
 SP_N = [random.gauss(0, SP_sigma) for _ in range(UEs)]
 Env_rl = WirelessNetwork(N=UEs, M=RBGs, mu_B_vip=MU_B_VIP, sigma_B_vip=SIMGA_B_VIP, mu_B=MU_B, sigma_B=SIMGA_B,
-                         SP_N=SP_N)
+                         SP_N=SP_N,trans=True)
 # Env_rand=WirelessNetwork(N=UEs,M=RBGs,mu_B_vip=MU_B_VIP,sigma_B_vip=SIMGA_B_VIP,mu_B=MU_B,sigma_B=SIMGA_B,SP_N=SP_N)
 VIP_list = Env_rl.Vip_index  # Note:ensure they have same VIP UEs
 
@@ -46,6 +46,9 @@ if fixed_size:
 else:
     policy = SimpleTransformerEncoder(input_dim, output_dim=output_dim, hidden_dim=hidden_dim).to(device)
 
+policy=TransLayer(input_dim_A=18,input_dim_B=16,m1=4, m2=4,
+                    d_k1=32, d_v1=32, d_v2=32,
+                    M=RBGs)
 # optimizer = optim.Adam(policy.parameters(), lr=lr)
 optimizer = optim.Adam(policy.parameters(), lr=lr)
 
@@ -53,24 +56,25 @@ eps = np.finfo(np.float32).eps.item()
 
 
 def select_action(state,force=None):
-    state = np.array(state)
+    # state = np.array(state)
+    #
+    X_1,X_2,X_3=state
+    X_1 = torch.from_numpy(X_1).float()
+    X_2 = torch.from_numpy(X_2).float()
+    X_3 = torch.from_numpy(X_3).float()
 
-    state = torch.from_numpy(state).float()
 
-    probs = policy(state)
 
+    probs = policy(X_1,X_2,X_3)
 
     X_flat=Env_rl.last_X.flatten()
     none=np.where(X_flat>=100)[0]
 
 
-
-    # 将tensor展平为一维
-    if fixed_size != True:
-
-        flat_tensor = probs.view(-1)
-        # 对展平后的tensor计算softmax，得到概率分布
-        probs = F.softmax(flat_tensor, dim=0)
+    flat_tensor = probs.view(-1)
+    # 对展平后的tensor计算softmax，得到概率分布
+    # probs = F.softmax(flat_tensor, dim=0)
+    probs=flat_tensor
 
     # if len(none)>0:
     #     new_probs=probs.clone()
@@ -86,6 +90,7 @@ def select_action(state,force=None):
 
     else:
         probs = F.softmax(probs)
+
     ##entorpy test
     log=torch.log2(probs)
     dis=probs.clone()
@@ -174,9 +179,11 @@ if __name__ == '__main__':
 
     # get state.
     Env_rl.init_P()
+    #test
     state = Env_rl.getState()
-    if fixed_size:
-        state = state.flatten().copy()
+
+    # if fixed_size:
+    #     state = state.flatten().copy()
 
     for t in range(timelog * Total_TTI):  # Don't infinite loop while learning
         # get action

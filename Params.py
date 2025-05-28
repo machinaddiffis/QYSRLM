@@ -11,7 +11,7 @@ random.seed(0)
 class WirelessNetwork:
     def __init__(self, K=1, M=17, Tx=8, N=100, Rx=1, N_vip=10, dmin=10, dmax=1000,
                  d_0=1, PL_0=0, alpha=2, SP_sigma=6, N_max=8, gamma=None,
-                 mu_B_vip=100000, sigma_B_vip=150, mu_B=80000, sigma_B=100,SP_N=None):
+                 mu_B_vip=100000, sigma_B_vip=150, mu_B=80000, sigma_B=100,SP_N=None,trans=False):
         self.K = K
         self.M = M
         self.Tx = Tx
@@ -25,7 +25,7 @@ class WirelessNetwork:
         self.alpha = alpha
         self.SP_sigma = SP_sigma
         self.N_max = N_max
-        self.gamma = gamma if gamma is not None else (N_max / N)*2
+        self.gamma = gamma if gamma is not None else (N_max / N)*3
 
         self.mu_B_vip = mu_B_vip
         self.sigma_B_vip = sigma_B_vip
@@ -36,7 +36,7 @@ class WirelessNetwork:
         self.preference=generate_random_vector()
 
         self.GNS=1
-
+        self.Trans=trans
 
         self.error = Mcs_Sinr_p()
         self.error.load_table()
@@ -283,6 +283,12 @@ class WirelessNetwork:
             self.Class,
             self.last_X
         ))
+        self.X_1 = self.state_H
+        self.X_2 = np.hstack((self.cur_B, self.Class))
+
+        self.HH = np.dot(self.state_H, self.state_H.conj().T)
+        self.X_3 = np.concatenate((np.real(self.HH), np.imag(self.HH)), axis=1)
+        self.Final_X = [self.X_1, self.X_2, self.X_3]
 
         info=None
         if self.inner_slot == self.timesteps:
@@ -292,7 +298,8 @@ class WirelessNetwork:
         else:
             done = False
 
-
+        if self.Trans:
+            return self.Final_X, REWARD, done, info
 
         return self.state,REWARD,done,info
     def getState(self):
@@ -322,6 +329,14 @@ class WirelessNetwork:
             self.cur_B
                               ))
 
+        self.X_1=self.state_H
+        self.X_2=np.hstack((self.cur_B,self.Class))
+
+        self.HH=np.dot(state_H,state_H.conj().T)
+        self.X_3=np.concatenate((np.real(self.HH),np.imag(self.HH)),axis=1)
+        self.Final_X=[self.X_1,self.X_2,self.X_3]
+
+
         self.last_rate =0
         self.last_edge=0
         self.last_satis=0
@@ -343,8 +358,10 @@ class WirelessNetwork:
         if np.sum(self.edge_vector)==0:
             self.N_w[2]=0
         self.N_w=self.N_w/np.sum(self.N_w)
-
-        return self.state
+        if self.Trans:
+            return self.Final_X
+        else:
+            return self.state
 
     def update(self,P=None,dec=None):
         vip_finish=False
