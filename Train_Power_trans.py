@@ -62,7 +62,7 @@ def select_action(state,force=None):
     X_1 = torch.from_numpy(X_1).float()
     X_2 = torch.from_numpy(X_2).float()
     X_3 = torch.from_numpy(X_3).float()
-
+    print(X_1.shape,X_2.shape,X_3.shape)
 
 
     probs = policy(X_1,X_2,X_3)
@@ -70,7 +70,7 @@ def select_action(state,force=None):
     X_flat=Env_rl.last_X.flatten()
     none=np.where(X_flat>=100)[0]
 
-
+    quit()
     flat_tensor = probs.view(-1)
     # 对展平后的tensor计算softmax，得到概率分布
     # probs = F.softmax(flat_tensor, dim=0)
@@ -224,6 +224,7 @@ if __name__ == '__main__':
 
             data.append(record)
             all_data.append(data)
+            quit()
 
             with open(f"./{name}.pkl", "wb") as file:
                 pickle.dump(all_data, file)

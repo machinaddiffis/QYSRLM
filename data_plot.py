@@ -253,7 +253,7 @@ if __name__ == "__main__":
     VIP=60000
     # data_obj = CallData(f"Baseline_Test_{VIP}_right_Phi.pkl",vip_target=VIP)
     # data_obj = CallData(f"RL_Test_new_version_single.pkl", vip_target=VIP)
-    data_obj = CallData(f"Baseline_Test_58000_ev_Phi.pkl", vip_target=VIP)
+    data_obj = CallData(f"Pretrain_58000.pkl", vip_target=VIP)
     data_obj.load_data()
     data_obj.calculat_samples()
     data_obj.plot_all()

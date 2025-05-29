@@ -283,6 +283,7 @@ class WirelessNetwork:
             self.Class,
             self.last_X
         ))
+
         self.X_1 = self.state_H
         self.X_2 = np.hstack((self.cur_B, self.Class))
 
@@ -328,6 +329,8 @@ class WirelessNetwork:
             self.last_X,
             self.cur_B
                               ))
+        print(self.scale_normalize_vector(self.state_B),
+              self.cur_B)
 
         self.X_1=self.state_H
         self.X_2=np.hstack((self.cur_B,self.Class))
@@ -477,7 +480,7 @@ class WirelessNetwork:
         # slot
         self.slot += 1
         self.reset_Phi()
-        if (self.slot % 80 == 0 and self.slot != 0):
+        if (self.slot % 1 == 0 and self.slot != 0):
             self.reset_H()
         if (self.slot % 300 == 0 and self.slot != 0):
             self.preference = generate_random_vector()

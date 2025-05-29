@@ -6,6 +6,8 @@ from scipy import interpolate
 import pickle
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset
+import torch.nn as nn
 random.seed(0)
 np.random.seed(0)
 
@@ -143,7 +145,83 @@ def generate_rayleigh_matrix(M, Tx,s=1):
     matrix = r * np.exp(1j * phi)
     return matrix
 
+def GetInput(H,Cur_B,his_B,ue_index,Trans=False):
+    if Trans:
 
+        state_H_ori = H[:, 0, :]
+        real_part = np.real(state_H_ori)
+        imaginary_part = np.imag(state_H_ori)
+        state_H = np.hstack((real_part, imaginary_part))
+
+        num = len(Cur_B)
+        state_B = np.expand_dims(Cur_B, axis=1)
+
+        classes = np.zeros(num)
+        if len(ue_index[-1]) > 0:
+            for iter in ue_index[-1]:
+                index = np.where(np.array(ue_index[0]) == iter)[0]
+                classes[index] = 1
+        edge = common_elements(ue_index[0], ue_index[1])
+
+        if len(edge) > 0:
+            for iter in edge:
+                index = np.where(np.array(ue_index[0]) == iter)[0]
+                classes[index] = -1
+        classes = np.expand_dims(classes, axis=1)
+
+        cur_B = normalize_vector(state_B).copy()
+
+        his_B = scale_normalize_vector(np.expand_dims(his_B, axis=1)).copy()
+
+
+        X_1 = normalize_vector(state_H)
+        X_2 = np.hstack((cur_B, his_B,classes))
+
+        HH = np.dot(state_H_ori, state_H_ori.conj().T)
+        X_3 = np.concatenate((np.real(HH), np.imag(HH)), axis=1)
+        Final_X = [X_1, X_2, X_3]
+
+        return Final_X
+
+
+    else:
+        state_H=H[:,0,:]
+        real_part = np.real(state_H)
+        imaginary_part = np.imag(state_H)
+        state_H = np.hstack((real_part, imaginary_part))
+
+        num = len(Cur_B)
+        state_B = np.expand_dims(Cur_B, axis=1)
+
+
+        classes=np.zeros(num)
+        if len(ue_index[-1])>0:
+            for iter in ue_index[-1]:
+                index=np.where(np.array(ue_index[0])==iter)[0]
+                classes[index]=1
+        edge=common_elements(ue_index[0],ue_index[1])
+
+        if len(edge)>0:
+            for iter in edge:
+                index=np.where(np.array(ue_index[0])==iter)[0]
+                classes[index]=-1
+        classes = np.expand_dims(classes, axis=1)
+
+
+        cur_B = normalize_vector(state_B).copy()
+
+        his_B=scale_normalize_vector(np.expand_dims(his_B, axis=1)).copy()
+
+
+        state = np.hstack((
+            normalize_vector(state_H),
+            his_B,
+            classes,
+            cur_B
+        ))
+
+
+        return state
 def compute_zf_precoder(H):
     """
     计算零迫使（ZF）预编码矩阵
@@ -588,3 +666,160 @@ def scalar_to_index(index, N, M):
         raise ValueError("Index out of bounds for matrix size.")
     row, col = divmod(index, M)
     return row, col
+
+
+def normalize_vector(vector):
+    # 转换为 NumPy 数组，便于向量化计算
+
+    vector = np.array(vector)
+    min_val = np.min(vector)
+    max_val = np.max(vector)
+
+    # 防止最大值和最小值相同，避免除以0
+    if max_val == min_val:
+        return np.zeros_like(vector)
+
+    # 归一化计算公式：(x - min) / (max - min)
+    normalized = (vector - min_val) / (max_val - min_val)
+    return normalized
+
+
+def scale_normalize_vector(vector,norms=None):
+    # 转换为 NumPy 数组，便于向量化计算
+    vector = np.array(vector)
+    min_val = 10000
+    max_val = 80000
+
+    if norms is not  None:
+        min_val,max_val=norms
+
+    # 防止最大值和最小值相同，避免除以0
+    if max_val == min_val:
+        return np.zeros_like(vector)
+
+    # 归一化计算公式：(x - min) / (max - min)
+    normalized = (vector - min_val) / (max_val - min_val)
+    return normalized
+
+class PKLDataset_trans(Dataset):
+    """
+    A PyTorch Dataset for loading samples from multiple .pkl files.
+    Each .pkl file should contain a list of [input, output] samples,
+    where input is an 8x19 array and output is an 8x17 array.
+    """
+    def __init__(self, file_list):
+        self.samples = []
+        for file_path in file_list:
+            with open(file_path, 'rb') as f:
+                data = pickle.load(f)
+                self.samples.extend(data)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        x, y = self.samples[idx]
+        y[np.where(y>0)]=1
+
+        # Flatten the input and output to vectors
+        x1,x2,x3=x
+        x1 = torch.tensor(x1, dtype=torch.float32)
+        x2 = torch.tensor(x2, dtype=torch.float32)
+        x3 = torch.tensor(x3, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.float32)
+
+        return [x1,x2,x3], y
+
+
+
+def train_one_epoch(model, loader, criterion, optimizer, device, Trans=False,thresh = 0.5):
+    model.train()
+    running_loss = 0.0
+    for x_batch, y_batch in loader:
+        if Trans:
+            xx=[]
+            for iter in x_batch:
+                iter=iter.to(device)
+                xx.append(iter)
+            x_batch= xx
+        else:
+            x_batch = x_batch.to(device)
+        y_batch = y_batch.to(device)
+
+        optimizer.zero_grad()
+        preds = model(x_batch)
+        loss = criterion(preds, y_batch)
+        loss.backward()
+        optimizer.step()
+        if Trans:
+
+            running_loss += loss.item() * x_batch[0].size(0)
+        else:
+            running_loss += loss.item() * x_batch.size(0)
+
+
+        y_pred_bin = (preds >= thresh).float()
+        correct = (y_pred_bin == y_batch).float()
+        acc_per_label = correct.mean(dim=0)
+        mean_acc = acc_per_label.mean().item()
+
+    return running_loss / len(loader.dataset),mean_acc
+
+def validate(model, loader, criterion, device,Trans=False,thresh = 0.5):
+    model.eval()
+    running_loss = 0.0
+    with torch.no_grad():
+        for x_batch, y_batch in loader:
+
+            if Trans:
+                xx = []
+                for iter in x_batch:
+                    iter = iter.to(device)
+                    xx.append(iter)
+                x_batch = xx
+            else:
+                x_batch = x_batch.to(device)
+            y_batch = y_batch.to(device)
+            preds = model(x_batch)
+            loss = criterion(preds, y_batch)
+            if Trans:
+                running_loss += loss.item() * x_batch[0].size(0)
+            else:
+                running_loss += loss.item() * x_batch.size(0)
+
+            y_pred_bin = (preds >= thresh).float()
+            correct = (y_pred_bin == y_batch).float()
+            acc_per_label = correct.mean(dim=0)
+            mean_acc = acc_per_label.mean().item()
+
+
+    return running_loss / len(loader.dataset),mean_acc
+
+
+class PKLDataset(Dataset):
+    """
+    A PyTorch Dataset for loading samples from multiple .pkl files.
+    Each .pkl file should contain a list of [input, output] samples,
+    where input is an 8x19 array and output is an 8x17 array.
+    """
+    def __init__(self, file_list):
+        self.samples = []
+        for file_path in file_list:
+            with open(file_path, 'rb') as f:
+                data = pickle.load(f)
+                self.samples.extend(data)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        x, y = self.samples[idx]
+        y[np.where(y>0)]=1
+
+        # Flatten the input and output to vectors
+        x = torch.tensor(x, dtype=torch.float32).view(-1)
+        y = torch.tensor(y, dtype=torch.float32).view(-1)
+
+
+        return x, y
+
